@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aegis Animator E2E Test Harness</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        min-height: 300vh; /* Ensure page is scrollable */
+        margin: 0;
+      }
+      #main-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        z-index: 10;
+        transition: background-color 0.3s, backdrop-filter 0.3s; /* For visual feedback */
+      }
+      #navbar-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        transition: padding 0.3s;
+      }
+      #header-logo {
+        font-size: 1.5rem;
+        font-weight: bold;
+        transition: transform 0.3s;
+      }
+      main {
+        padding-top: 100px;
+      }
+      #hover-button,
+      #lifecycle-button {
+        padding: 1rem 2rem;
+        font-size: 1rem;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+      }
+      #lifecycle-container {
+        margin-top: 2rem;
+        padding: 1rem;
+        border: 1px dashed #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="main-header">
+      <div id="navbar-container">
+        <div id="header-logo">Logo</div>
+        <nav>Menu</nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Test Content</h1>
+      <button id="hover-button">Hover Me</button>
+      <div id="lifecycle-container"></div>
+      <p>Scroll down to test the header animation.</p>
+    </main>
+
+    <!-- Load the bundled library -->
+    <script src="../../../dist/index.js"></script>
+
+    <!-- Initialize the animators -->
+    <script type="module">
+      const { default: Aegis } = window.AegisAnimator;
+
+      // --- Header Animation ---
+      const HEADER_ANIMATION_CONFIG = {
+        id: "main-header",
+        trigger: { type: "scroll", sentinel: { topOffset: 50 } },
+        revertOnHover: true,
+        selectors: {
+          navbarContainer: "#navbar-container",
+          headerLogo: "#header-logo",
+        },
+        timing: { duration: 300, easing: "ease-in-out" },
+        animations: {
+          target: [
+            { backgroundColor: "rgba(255, 255, 255, 0.1)", backdropFilter: "blur(4px)" },
+            { backgroundColor: "rgba(0, 0, 0, 0.5)", backdropFilter: "blur(12px)" },
+          ],
+          navbarContainer: [{ padding: "1rem" }, { padding: "0.25rem" }],
+          headerLogo: [{ transform: "scale(1)" }, { transform: "scale(0.85)" }],
+        },
+      };
+      Aegis.attach("#main-header", HEADER_ANIMATION_CONFIG);
+
+      // --- Hover Button Animation ---
+      Aegis.attach("#hover-button", {
+        trigger: { type: "hover" },
+        selectors: {},
+        animations: {
+          target: [
+            { transform: "scale(1)", boxShadow: "0 2px 4px #0002" },
+            { transform: "scale(1.05)", boxShadow: "0 4px 12px #0004" },
+          ],
+        },
+        timing: { duration: 200, fill: "forwards", easing: "ease-out" },
+      });
+
+      // --- Lifecycle Test Functions (to be called by Playwright) ---
+      window.initializeApp = () => {
+        const container = document.getElementById("lifecycle-container");
+        container.innerHTML = `<button id="lifecycle-button">Lifecycle Test</button>`;
+        Aegis.attach("#lifecycle-button", {
+          trigger: { type: "hover" },
+          selectors: {},
+          animations: { target: [{ opacity: 1 }, { opacity: 0.5 }] },
+          timing: { duration: 200, fill: "forwards" },
+        });
+      };
+      window.destroyAllApps = () => Aegis.destroyAll();
+    </script>
+  </body>
+</html>
