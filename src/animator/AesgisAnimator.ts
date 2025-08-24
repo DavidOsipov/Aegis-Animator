@@ -4,6 +4,7 @@
 /**
  * @file This module provides a high-performance, security-hardened, and lifecycle-aware
  * animation controller for generic DOM elements.
+ * @filename AesgisAnimator.ts
  */
 
 import {
@@ -38,6 +39,7 @@ type ExtendedAnimationOptions = KeyframeAnimationOptions & {
 export class ResilientAnimator {
   private readonly targetElement: Element;
   private readonly options: AnimatorOptions;
+  private readonly validator: ElementValidator;
   private readonly elements = new Map<string, Element>();
   private readonly animations = new Map<string, Animation>();
   private readonly abortController: AbortController;
@@ -60,12 +62,17 @@ export class ResilientAnimator {
     this.performanceMetrics = { initStart: now, initComplete: 0, animationCount: 0, errorCount: 0 };
 
     try {
+      // Statically validate the root element itself before creating a scoped validator.
       this.targetElement = ElementValidator.validateElement(targetElement, options.id);
       this.options = Object.freeze(options); // Prevent runtime tampering
+
+      // Create a sandboxed validator instance scoped to this animator's root element.
+      this.validator = new ElementValidator([this.targetElement]);
+
       this.abortController = new AbortController();
       this.capabilities = CapabilityDetector.detect();
 
-      if (this.options.isHoverable && this.options.trigger.type === 'scroll') {
+      if (this.options.revertOnHover) {
         const debounceMs = (this.options.trigger as { debounceMs?: number }).debounceMs ?? 50;
         this.debouncedMouseLeave = debounce(this.performMouseLeaveActions.bind(this), debounceMs);
       }
@@ -122,7 +129,8 @@ export class ResilientAnimator {
       throw new InvalidParameterError(`Too many elements configured: ${elementCount} > ${MAX_ELEMENTS_TO_ANIMATE}`);
     }
     for (const [key, selector] of Object.entries(this.options.selectors)) {
-      const element = ElementValidator.queryElementSafely(selector, this.targetElement);
+      // Use the sandboxed, instance-based validator.
+      const element = this.validator.queryElementSafely(selector);
       if (element) this.elements.set(key, element);
     }
   }
@@ -141,12 +149,10 @@ export class ResilientAnimator {
     };
 
     try {
-      // Animate the main target element
       const targetAnimation = this.targetElement.animate(this.options.animations.target, baseOptions);
       targetAnimation.pause();
       this.animations.set("target", targetAnimation);
 
-      // Animate child elements
       for (const [key, keyframes] of Object.entries(this.options.animations)) {
         if (key === 'target') continue;
         const element = this.elements.get(key);
@@ -168,10 +174,11 @@ export class ResilientAnimator {
       case 'scroll':
         this.setupIntersectionObserver(trigger);
         break;
-      // Add 'click', 'manual' etc. triggers here in the future
-      default:
-        // For 'hover' trigger, the main logic is in attachHoverListeners
+      case 'hover':
+        this.targetElement.addEventListener("mouseenter", () => { this.isTriggered = true; this.updateAnimationState(); }, { signal: this.abortController.signal, passive: true });
+        this.targetElement.addEventListener("mouseleave", () => { this.isTriggered = false; this.updateAnimationState(); }, { signal: this.abortController.signal, passive: true });
         break;
+      // Add 'click', 'manual' etc. triggers here in the future
     }
   }
 
@@ -220,45 +227,32 @@ export class ResilientAnimator {
   }
 
   private attachHoverListeners(): void {
-    if (this.options.isHoverable || this.options.trigger.type === 'hover') {
+    // This logic is now specifically for the "revert on hover" feature.
+    if (this.options.revertOnHover) {
       this.targetElement.addEventListener("mouseenter", this.handleMouseEnter, { signal: this.abortController.signal, passive: true });
       this.targetElement.addEventListener("mouseleave", this.handleMouseLeave, { signal: this.abortController.signal, passive: true });
     }
   }
 
   private updateAnimationState(): void {
-    if (this.isDestroyed || (this.isHovering && this.isTriggered)) return;
-    try {
-      for (const animation of this.animations.values()) {
-        this.playOrSeekAnimation(animation, this.isTriggered);
-      }
-      this.performanceMetrics.animationCount++;
-    } catch (error: unknown) {
-      this.handleError("Animation state update failed", error);
-    }
+    // If a hover interaction is active, it takes precedence. Do nothing.
+    if (this.isDestroyed || (this.isHovering && this.options.revertOnHover)) return;
+    
+    this.playAllAnimations(this.isTriggered);
+    this.performanceMetrics.animationCount++;
   }
 
   private handleMouseEnter = (): void => {
-    if (this.isDestroyed) return;
-
-    if (this.options.trigger.type === 'scroll' && !this.isTriggered) return;
-
+    if (this.isDestroyed || !this.isTriggered) return;
+    
     this.isHovering = true;
     this.debouncedMouseLeave?.cancel();
-    try {
-      for (const animation of this.animations.values()) {
-        this.playOrSeekAnimation(animation, false); // Play to expanded state
-      }
-    } catch (error: unknown) {
-      this.handleError("Mouse enter handler failed", error);
-    }
+    this.playAllAnimations(false); // Play to initial (un-triggered) state
   };
 
   private handleMouseLeave = (): void => {
-    if (this.isDestroyed) return;
-
-    if (this.options.trigger.type === 'scroll' && !this.isTriggered) return;
-
+    if (this.isDestroyed || !this.isTriggered) return;
+    
     this.isHovering = false;
     if (this.debouncedMouseLeave) {
       this.debouncedMouseLeave();
@@ -268,17 +262,19 @@ export class ResilientAnimator {
   };
 
   private performMouseLeaveActions(): void {
-    if (this.isDestroyed || this.isHovering) return;
+    // Revert to triggered state only if hover has ended and the main trigger is still active.
+    if (!this.isHovering && !this.isDestroyed && this.isTriggered) {
+      this.playAllAnimations(true); // Play to triggered state
+    }
+  }
 
-    // For scroll triggers, only revert if the trigger is active
-    if (this.options.trigger.type === 'scroll' && !this.isTriggered) return;
-
+  private playAllAnimations(toTriggeredState: boolean): void {
     try {
       for (const animation of this.animations.values()) {
-        this.playOrSeekAnimation(animation, true); // Play to triggered/compact state
+        this.playOrSeekAnimation(animation, toTriggeredState);
       }
     } catch (error: unknown) {
-      this.handleError("Debounced mouse leave handler failed", error);
+      this.handleError("Animation playback failed", error);
     }
   }
 
