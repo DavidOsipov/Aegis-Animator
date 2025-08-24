@@ -37,6 +37,7 @@ Modern web development is complex. Components mount and unmount, users have diff
 
     Aegis.attach('#my-button', {
       trigger: { type: 'hover' },
+      selectors: {}, // No child elements to animate
       animations: {
         target: [
           { transform: 'scale(1)', boxShadow: '0 2px 4px #0002' },
@@ -55,11 +56,41 @@ Modern web development is complex. Components mount and unmount, users have diff
 
 This is the original use case that inspired the library. Create a header that shrinks on scroll, expands on hover when shrunk, and respects the user's motion preferences, all while being completely memory-safe.
 
-See the full implementation in [`src/examples/header-animation.ts`](./src/examples/header-animation.ts).
-
 ```typescript
 import Aegis from 'aegis-animator';
-import { HEADER_ANIMATION_CONFIG } from './header-config';
+
+// REFACTORED: Included the config object directly for a complete example.
+const HEADER_ANIMATION_CONFIG = {
+  id: 'main-header',
+  viewTransitionName: 'main-header',
+  trigger: {
+    type: 'scroll',
+    sentinel: { topOffset: 50 }
+  },
+  revertOnHover: true,
+  selectors: {
+    navbarContainer: '#navbar-container',
+    headerLogo: '#header-logo',
+  },
+  timing: {
+    duration: 300,
+    easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)',
+  },
+  animations: {
+    target: [
+      { backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(4px)' },
+      { backgroundColor: 'rgba(238, 229, 233, 0.4)', backdropFilter: 'blur(12px)' },
+    ],
+    navbarContainer: [
+      { paddingTop: '1rem', paddingBottom: '1rem' },
+      { paddingTop: '0.25rem', paddingBottom: '0.25rem' }
+    ],
+    headerLogo: [
+      { transform: 'scale3d(1, 1, 1)' },
+      { transform: 'scale3d(0.85, 0.85, 1)' }
+    ],
+  }
+};
 
 // Initialize the header animation on page load
 Aegis.attach('#main-header', HEADER_ANIMATION_CONFIG);
@@ -75,22 +106,20 @@ document.addEventListener('astro:page-load', () => {
 
 ### `Aegis.attach(selector, options)`
 
-The primary method for creating and managing an animation.
+The primary method for creating and managing an animation. Returns a handle with a `destroy` method for manual cleanup, or `undefined` if the element isn't found.
 
 *   `selector`: A CSS selector for the main target element.
-*   `options`: A configuration object defining the trigger, animations, and timing.
+*   `options`: A configuration object (`AnimatorOptions`) defining the trigger, animations, and timing.
 
 ### `Aegis.destroyAll()`
 
 Destroys all active animator instances and cleans up their resources. Essential for SPA navigation.
 
-### Core Utilities
+## 🛡️ The Security Sandbox
 
-For advanced use cases, you can import the core building blocks directly:
+Aegis Animator's key security feature is its **instance-scoped validator**. When you call `Aegis.attach()`, it creates a new animator instance that is permanently sandboxed to the element you provided.
 
-*   `AegisAnimator`: The core class that manages a single animated element.
-*   `CapabilityDetector`: The static class for detecting browser features.
-*   `ElementValidator`: The static class for secure DOM querying.
+All subsequent DOM queries for child elements (defined in `options.selectors`) are **guaranteed** to be contained within that root element. This prevents selector injection vulnerabilities and ensures one animated component cannot accidentally or maliciously affect another part of the page.
 
 ## 🏛️ Philosophy
 
