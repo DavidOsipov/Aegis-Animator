@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 David Osipov <personal@david-osipov.vision>
 
 /**
- * @file Type definitions for the Resilient Animator library.
+ * @file Type definitions for the Aegis Animator library.
  */
 
 //==============================================================================
@@ -57,7 +57,7 @@ export interface SentinelOptions {
 }
 
 /**
- * The main configuration object for creating a new ResilientAnimator instance.
+ * The main configuration object for creating a new AegisAnimator instance.
  */
 export interface AnimatorOptions {
   /** An optional, unique ID for the main target element for validation. */
@@ -76,7 +76,8 @@ export interface AnimatorOptions {
   trigger: TriggerOptions;
 
   /** If true, hovering over the element will play the animation in reverse when it is in the 'triggered' state. */
-  isHoverable?: boolean;
+  // REFACTORED: Renamed from `isHoverable` to match implementation and be more descriptive.
+  revertOnHover?: boolean;
 
   /** For view transitions, a unique name for the root element. */
   viewTransitionName?: string;
