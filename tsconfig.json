@@ -1,0 +1,52 @@
+// tsconfig.json
+{
+  "compilerOptions": {
+    // === PROJECT STRUCTURE ===
+    "outDir": "./dist",
+    "rootDir": "./src",
+
+    // === LANGUAGE AND ENVIRONMENT ===
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    // === TYPE CHECKING - THE STRICTEST POSSIBLE (PRESERVED FROM YOUR CONFIG) ===
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // === EMIT CONTROL - CONFIGURED FOR LIBRARY PUBLISHING ===
+    "noEmit": false, // CRITICAL: We MUST emit files for a library
+    "declaration": true, // CRITICAL: Generate .d.ts files for consumers
+    "declarationMap": true, // Generates source maps for .d.ts files
+    "sourceMap": true, // Generates .js.map files for easier debugging
+    "removeComments": false, // Keep JSDoc comments for better editor tooltips
+
+    // === STRICT PROJECT CONFIGURATION ===
+    "skipLibCheck": true // Recommended for libraries to speed up builds
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"]
+}
