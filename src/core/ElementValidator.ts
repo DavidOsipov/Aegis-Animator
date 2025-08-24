@@ -6,53 +6,50 @@ import {
   InvalidParameterError,
   secureDevLog,
   sanitizeErrorForLogs,
-} from "../utils/security_kit";
+} from "@david-osipov/security-kit"; // <-- ASSUMING a published package
 
 /**
- * @summary Provides safe, allowlist-based DOM querying and validation.
+ * @summary Provides safe, allowlist-based DOM querying and validation scoped to an instance.
  * This class is a critical security component that prevents selector injection and ensures
- * that the animator can only interact with a predefined, safe subset of the DOM.
+ * that an animator can only interact with elements within its predefined, safe boundaries.
  */
 export class ElementValidator {
-  private static validatedElements = new WeakSet<Element>();
-  private static allowedRootSelectors = new Set<string>();
-  private static forbiddenRoots = new Set(['body', 'html', '#app', '#root']);
-  private static allowedRootElementsCache: Map<string, Element | null> | null = null;
+  private readonly validatedElements = new WeakSet<Element>();
+  private readonly allowedRootElements: readonly Element[];
+  private static readonly forbiddenRoots = new Set(['body', 'html', '#app', '#root']);
 
   /**
-   * @summary Configures the validator with the set of root selectors that are considered safe boundaries.
-   * This MUST be called by the library's manager before any queries are made.
-   * @param selectors An array of CSS selectors for the allowed root elements.
+   * Creates a new validator instance scoped to a specific set of root elements.
+   * @param rootElements An array of DOM Elements that define the safe boundaries for queries.
    */
-  public static configure(selectors: string[]): void {
-    this.allowedRootElementsCache = null; // Invalidate cache
-    this.allowedRootSelectors.clear();
-    for (const root of selectors) {
-      if (this.forbiddenRoots.has(root.toLowerCase())) {
-        throw new InvalidConfigurationError(`Disallowed broad selector in validator allowlist: "${root}"`);
+  constructor(rootElements: Element[]) {
+    if (!rootElements || rootElements.length === 0) {
+      throw new InvalidConfigurationError("ElementValidator must be initialized with at least one root element.");
+    }
+
+    this.allowedRootElements = Object.freeze(rootElements.filter(el => {
+      const rootIdentifier = el.id ? `#${el.id}` : el.tagName.toLowerCase();
+      if (ElementValidator.forbiddenRoots.has(rootIdentifier)) {
+        throw new InvalidConfigurationError(`Disallowed broad element used as a root: "${rootIdentifier}"`);
       }
-      this.allowedRootSelectors.add(root);
-    }
+      return true;
+    }));
   }
 
-  private static _resolveAndCacheAllowedRoots(): Map<string, Element | null> {
-    if (this.allowedRootElementsCache) {
-      return this.allowedRootElementsCache;
-    }
-    const cache = new Map<string, Element | null>();
-    for (const selector of this.allowedRootSelectors) {
-      cache.set(selector, document.querySelector(selector));
-    }
-    this.allowedRootElementsCache = cache;
-    return cache;
-  }
-
+  /**
+   * Performs a basic validation of a CSS selector's syntax and non-emptiness.
+   * This is a static utility method as it does not depend on instance state.
+   * @param selector The CSS selector string to validate.
+   * @returns The validated selector.
+   * @throws {InvalidParameterError} If the selector is invalid.
+   */
   public static validateSelectorSyntax(selector: string): string {
     if (typeof selector !== "string" || !selector.trim()) {
       throw new InvalidParameterError("Invalid selector: must be a non-empty string");
     }
     if (typeof document !== "undefined") {
       try {
+        // Use a detached fragment to safely test selector syntax without touching the live DOM.
         document.createDocumentFragment().querySelector(selector);
       } catch (err) {
         throw new InvalidParameterError(`Invalid selector syntax: ${selector}. Reason: ${err instanceof Error ? err.message : String(err)}`);
@@ -61,6 +58,14 @@ export class ElementValidator {
     return selector;
   }
 
+  /**
+   * Validates that a given value is a DOM Element and does not have a forbidden tag name.
+   * This is a static utility method as it does not depend on instance state.
+   * @param el The unknown value to validate.
+   * @param expectedId An optional ID to match against.
+   * @returns The validated DOM Element.
+   * @throws {InvalidParameterError} If validation fails.
+   */
   public static validateElement(el: unknown, expectedId?: string | null): Element {
     if (!el || (el as Node).nodeType !== Node.ELEMENT_NODE) {
       throw new InvalidParameterError("Invalid element: must be a DOM Element");
@@ -69,49 +74,47 @@ export class ElementValidator {
     if (expectedId && element.id !== expectedId) {
       throw new InvalidParameterError(`Element ID mismatch: expected ${expectedId}, got ${element.id}`);
     }
-    if (!this.validatedElements.has(element)) {
-      const tag = element.tagName.toLowerCase();
-      if (["script", "iframe", "object", "embed"].includes(tag)) {
-        throw new InvalidParameterError(`Forbidden element tag: <${tag}>`);
-      }
-      this.validatedElements.add(element);
+    const tag = element.tagName.toLowerCase();
+    if (["script", "iframe", "object", "embed"].includes(tag)) {
+      throw new InvalidParameterError(`Forbidden element tag: <${tag}>`);
     }
     return element;
   }
 
-  public static queryElementSafely(selector: string, context: Document | Element = document): Element | null {
+  /**
+   * @summary Safely queries for an element and performs a full semantic validation.
+   * It ensures that the returned element not only matches the selector but also resides
+   * within one of the `allowedRootElements` defined for this validator instance.
+   * @param selector The CSS selector to query.
+   * @param context The DOM context (Element or Document) in which to perform the query. Defaults to `document`.
+   * @returns The validated Element, or null if not found or if validation fails.
+   */
+  public queryElementSafely(selector: string, context: Document | Element = document): Element | null {
     try {
-      this.validateSelectorSyntax(selector);
+      ElementValidator.validateSelectorSyntax(selector);
       const el = context.querySelector(selector);
       if (!el) return null;
 
-      const rootEls = Array.from(this._resolveAndCacheAllowedRoots().values()).filter(Boolean) as Element[];
-      if (rootEls.length === 0) {
-        throw new InvalidConfigurationError("ElementValidator has not been configured with any allowed roots.");
-      }
-
       let isContained = false;
-      for (const rootEl of rootEls) {
+      for (const rootEl of this.allowedRootElements) {
+        // An element is contained if it is the root itself or a descendant of the root.
         if (rootEl === el || rootEl.contains(el)) {
           isContained = true;
           break;
         }
       }
 
-      if (!isContained && context instanceof Element) {
-        for (const rootEl of rootEls) {
-          if (rootEl === context || rootEl.contains(context)) {
-            isContained = true;
-            break;
-          }
-        }
-      }
-
       if (!isContained) {
-        throw new InvalidParameterError(`Element targeted by selector is outside allowlisted roots: ${selector}`);
+        throw new InvalidParameterError(`Element targeted by selector is outside the allowed animator root: ${selector}`);
       }
 
-      return this.validateElement(el);
+      // Perform final tag validation and memoize the validation result.
+      ElementValidator.validateElement(el);
+      if (!this.validatedElements.has(el)) {
+          this.validatedElements.add(el);
+      }
+      return el;
+
     } catch (err) {
       secureDevLog("warn", "ElementValidator", "Element query failed validation", { selector, err: sanitizeErrorForLogs(err) });
       return null;
