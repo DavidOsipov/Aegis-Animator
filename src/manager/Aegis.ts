@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: © 2025 David Osipov <personal@david-osipov.vision>
 
-import { ResilientAnimator } from "../animator/ResilientAnimator";
-import { ElementValidator } from "../core/ElementValidator";
+// RENAMED: from AnimationManager.ts
+
+import { AegisAnimator } from "../animator/AegisAnimator";
 import type { AnimatorOptions } from "../types";
-import { secureDevLog, sanitizeErrorForLogs } from "../utils/security_kit";
+import { secureDevLog, sanitizeErrorForLogs } from "@david-osipov/security-kit";
 
 /**
- * @summary A singleton manager to handle the lifecycle of ResilientAnimator instances.
+ * @summary A singleton manager to handle the lifecycle of AegisAnimator instances.
  * This provides a simple, declarative API for attaching and cleaning up animations.
+ * @class Aegis
  */
-export class AnimationManager {
-  private static instances = new Map<Element, ResilientAnimator>();
+export class Aegis {
+  private static instances = new Map<Element, AegisAnimator>();
 
   /**
    * Attaches a resilient animator to a target element. If an animator already exists
@@ -25,31 +27,36 @@ export class AnimationManager {
     options: AnimatorOptions
   ): { destroy: () => void } | undefined {
     try {
-      // Configure the validator with the root element as a safe boundary.
-      ElementValidator.configure([selector]);
+      // CORRECTED: The manager's role is ONLY to find the root element.
+      // It does not perform validation itself; that responsibility is delegated
+      // to the AegisAnimator constructor to ensure a proper security sandbox.
+      const element = document.querySelector(selector);
 
-      const element = ElementValidator.queryElementSafely(selector);
       if (!element) {
-        secureDevLog("warn", "AnimationManager", `Target element not found or invalid: ${selector}`, {});
+        secureDevLog("warn", "Aegis", `Target element not found: ${selector}`, {});
         return;
       }
 
-      // Clean up any existing instance on this element
+      // Clean up any existing instance on this element for idempotency.
       if (this.instances.has(element)) {
         this.instances.get(element)?.destroy();
       }
 
-      const instance = new ResilientAnimator(element, options);
+      // The AegisAnimator constructor will validate the element and create
+      // its own instance-scoped, sandboxed ElementValidator.
+      const instance = new AegisAnimator(element, options);
       this.instances.set(element, instance);
 
-      return {
-        destroy: () => {
-          instance.destroy();
-          this.instances.delete(element);
-        },
+      // Provide a handle for manual destruction.
+      const destroy = () => {
+        instance.destroy();
+        this.instances.delete(element);
       };
+
+      return { destroy };
+
     } catch (error: unknown) {
-      secureDevLog("error", "AnimationManager", "Failed to attach animator", {
+      secureDevLog("error", "Aegis", "Failed to attach animator", {
         selector,
         error: sanitizeErrorForLogs(error),
       });
@@ -82,9 +89,9 @@ export class AnimationManager {
   /**
    * Retrieves the animator instance for a given element, if it exists.
    * @param element The element to look up.
-   * @returns The ResilientAnimator instance or null.
+   * @returns The AegisAnimator instance or null.
    */
-  public static getInstance(element: Element): ResilientAnimator | null {
+  public static getInstance(element: Element): AegisAnimator | null {
     return this.instances.get(element) ?? null;
   }
 }
