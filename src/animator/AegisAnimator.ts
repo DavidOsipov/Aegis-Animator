@@ -4,7 +4,7 @@
 /**
  * @file This module provides a high-performance, security-hardened, and lifecycle-aware
  * animation controller for generic DOM elements.
- * @filename AesgisAnimator.ts
+ * @filename AegisAnimator.ts
  */
 
 import {
@@ -12,7 +12,7 @@ import {
   InvalidParameterError,
   sanitizeErrorForLogs,
   environment,
-} from "@david-osipov/security-kit"; // <-- ASSUMING a published package
+} from "@david-osipov/security-kit";
 
 import { CapabilityDetector } from "../core/CapabilityDetector";
 import { ElementValidator } from "../core/ElementValidator";
@@ -36,7 +36,8 @@ type ExtendedAnimationOptions = KeyframeAnimationOptions & {
  * This class encapsulates all logic for observing triggers, handling user interaction,
  * and applying animations in a performant and secure manner.
  */
-export class ResilientAnimator {
+// REFACTORED: Renamed class for consistency with the library name.
+export class AegisAnimator {
   private readonly targetElement: Element;
   private readonly options: AnimatorOptions;
   private readonly validator: ElementValidator;
@@ -62,23 +63,23 @@ export class ResilientAnimator {
     this.performanceMetrics = { initStart: now, initComplete: 0, animationCount: 0, errorCount: 0 };
 
     try {
-      // Statically validate the root element itself before creating a scoped validator.
       this.targetElement = ElementValidator.validateElement(targetElement, options.id);
-      this.options = Object.freeze(options); // Prevent runtime tampering
+      this.options = Object.freeze(options);
 
-      // Create a sandboxed validator instance scoped to this animator's root element.
+      // REFACTORED: The validator is correctly sandboxed to this instance's root element.
       this.validator = new ElementValidator([this.targetElement]);
 
       this.abortController = new AbortController();
       this.capabilities = CapabilityDetector.detect();
 
+      // REFACTORED: Correctly check for `revertOnHover` from options.
       if (this.options.revertOnHover) {
         const debounceMs = (this.options.trigger as { debounceMs?: number }).debounceMs ?? 50;
         this.debouncedMouseLeave = debounce(this.performMouseLeaveActions.bind(this), debounceMs);
       }
 
       if (environment.isDevelopment) {
-        secureDevLog("info", "ResilientAnimator", "Initializing", { capabilities: this.capabilities });
+        secureDevLog("info", "AegisAnimator", "Initializing", { capabilities: this.capabilities });
       }
 
       if (this.capabilities.reducedMotion) {
@@ -94,7 +95,7 @@ export class ResilientAnimator {
 
       if (environment.isDevelopment) {
         const initTime = this.performanceMetrics.initComplete - this.performanceMetrics.initStart;
-        secureDevLog("info", "ResilientAnimator", "Initialization complete", { initTime: `${initTime.toFixed(2)}ms`, level: this.capabilities.level });
+        secureDevLog("info", "AegisAnimator", "Initialization complete", { initTime: `${initTime.toFixed(2)}ms`, level: this.capabilities.level });
       }
     } catch (error: unknown) {
       this.handleError("Initialization failed catastrophically", error);
@@ -129,7 +130,6 @@ export class ResilientAnimator {
       throw new InvalidParameterError(`Too many elements configured: ${elementCount} > ${MAX_ELEMENTS_TO_ANIMATE}`);
     }
     for (const [key, selector] of Object.entries(this.options.selectors)) {
-      // Use the sandboxed, instance-based validator.
       const element = this.validator.queryElementSafely(selector);
       if (element) this.elements.set(key, element);
     }
@@ -178,7 +178,6 @@ export class ResilientAnimator {
         this.targetElement.addEventListener("mouseenter", () => { this.isTriggered = true; this.updateAnimationState(); }, { signal: this.abortController.signal, passive: true });
         this.targetElement.addEventListener("mouseleave", () => { this.isTriggered = false; this.updateAnimationState(); }, { signal: this.abortController.signal, passive: true });
         break;
-      // Add 'click', 'manual' etc. triggers here in the future
     }
   }
 
@@ -227,7 +226,6 @@ export class ResilientAnimator {
   }
 
   private attachHoverListeners(): void {
-    // This logic is now specifically for the "revert on hover" feature.
     if (this.options.revertOnHover) {
       this.targetElement.addEventListener("mouseenter", this.handleMouseEnter, { signal: this.abortController.signal, passive: true });
       this.targetElement.addEventListener("mouseleave", this.handleMouseLeave, { signal: this.abortController.signal, passive: true });
@@ -235,7 +233,6 @@ export class ResilientAnimator {
   }
 
   private updateAnimationState(): void {
-    // If a hover interaction is active, it takes precedence. Do nothing.
     if (this.isDestroyed || (this.isHovering && this.options.revertOnHover)) return;
     
     this.playAllAnimations(this.isTriggered);
@@ -247,49 +244,46 @@ export class ResilientAnimator {
     
     this.isHovering = true;
     this.debouncedMouseLeave?.cancel();
-    this.playAllAnimations(false); // Play to initial (un-triggered) state
+    this.playAllAnimations(false);
   };
 
   private handleMouseLeave = (): void => {
     if (this.isDestroyed || !this.isTriggered) return;
     
     this.isHovering = false;
-    if (this.debouncedMouseLeave) {
-      this.debouncedMouseLeave();
-    } else {
-      this.performMouseLeaveActions();
-    }
+    this.debouncedMouseLeave?.();
   };
 
   private performMouseLeaveActions(): void {
-    // Revert to triggered state only if hover has ended and the main trigger is still active.
     if (!this.isHovering && !this.isDestroyed && this.isTriggered) {
-      this.playAllAnimations(true); // Play to triggered state
+      this.playAllAnimations(true);
     }
   }
 
-  private playAllAnimations(toTriggeredState: boolean): void {
+  // REFACTORED: Renamed parameter for clarity.
+  private playAllAnimations(playToEndState: boolean): void {
     try {
       for (const animation of this.animations.values()) {
-        this.playOrSeekAnimation(animation, toTriggeredState);
+        this.playOrSeekAnimation(animation, playToEndState);
       }
     } catch (error: unknown) {
       this.handleError("Animation playback failed", error);
     }
   }
 
-  private playOrSeekAnimation(animation: Animation, toTriggeredState: boolean): void {
+  // REFACTORED: Renamed parameter for clarity.
+  private playOrSeekAnimation(animation: Animation, playToEndState: boolean): void {
     const duration = Number(animation.effect?.getTiming().duration ?? 0);
 
     const seekToEndState = () => {
-      animation.currentTime = toTriggeredState ? duration : 0;
+      animation.currentTime = playToEndState ? duration : 0;
       animation.pause();
     };
 
     if (this.capabilities.supportsNegativePlaybackRate && duration > 0) {
       try {
-        animation.playbackRate = toTriggeredState ? 1 : -1;
-        animation.currentTime = toTriggeredState ? 0 : duration;
+        animation.playbackRate = playToEndState ? 1 : -1;
+        animation.currentTime = playToEndState ? 0 : duration;
         animation.play();
       } catch (err: unknown) {
         this.handleError("playOrSeekAnimation playback failed, falling back to seek", err);
@@ -312,10 +306,10 @@ export class ResilientAnimator {
 
   private handleError(message: string, error: unknown): void {
     this.performanceMetrics.errorCount++;
-    secureDevLog("error", "ResilientAnimator", message, { error: sanitizeErrorForLogs(error), state: { isTriggered: this.isTriggered, isHovering: this.isHovering } });
+    secureDevLog("error", "AegisAnimator", message, { error: sanitizeErrorForLogs(error), state: { isTriggered: this.isTriggered, isHovering: this.isHovering } });
 
     if (this.performanceMetrics.errorCount > MAX_ANIMATION_RETRIES) {
-      secureDevLog("error", "ResilientAnimator", "Exceeded max retries, destroying instance.", {});
+      secureDevLog("error", "AegisAnimator", "Exceeded max retries, destroying instance.", {});
       this.destroy();
     }
   }
@@ -348,10 +342,10 @@ export class ResilientAnimator {
       this.targetElement.removeAttribute("data-animation-ready");
 
       if (environment.isDevelopment) {
-        secureDevLog("info", "ResilientAnimator", "Destroyed successfully", this.getMetrics());
+        secureDevLog("info", "AegisAnimator", "Destroyed successfully", this.getMetrics());
       }
     } catch (error: unknown) {
-      secureDevLog("error", "ResilientAnimator", "Destruction failed", { error: sanitizeErrorForLogs(error) });
+      secureDevLog("error", "AegisAnimator", "Destruction failed", { error: sanitizeErrorForLogs(error) });
     }
   }
 }
